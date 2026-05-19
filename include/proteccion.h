@@ -32,5 +32,6 @@ estado_red_t proteccion_evaluar(float v1, float thd1, float v2, float thd2, floa
 void proteccion_set_modo_auto(void);
 void proteccion_forzar_desconexion(void); 
 void proteccion_forzar_conexion(void);
+bool proteccion_get_modo_manual(void);
 
 #endif

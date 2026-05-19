@@ -117,3 +117,7 @@ void proteccion_forzar_conexion(void) {
     enviar_pulso_rele(PIN_RELE_SET);
     estado_actual = ESTADO_NORMAL; 
 }
+
+bool proteccion_get_modo_manual(void) {
+    return modo_manual;
+}

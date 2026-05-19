@@ -14,6 +14,6 @@ void mqtt_app_start(void);
  * @param thd Porcentaje de Distorsión Armónica Total
  * @param estado Cadena de texto con el estado de la protección
  */
-void mqtt_enviar_datos(const char* fase, float v_rms, float freq, float thd, const char* estado);
+void mqtt_enviar_datos(const char* fase, float v_rms, float freq, float thd, const char* estado, const char* modo);
 
 #endif

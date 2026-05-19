@@ -67,15 +67,13 @@ void mqtt_app_start(void) {
     esp_mqtt_client_start(client);
 }
 
-void mqtt_enviar_datos(const char* fase, float v_rms, float freq, float thd, const char* estado) {
+void mqtt_enviar_datos(const char* fase, float v_rms, float freq, float thd, const char* estado, const char* modo) {
     if (client == NULL) return; 
 
     char json_payload[150];
-
-    // Se agrega el parámetro de la fase al principio del JSON
     snprintf(json_payload, sizeof(json_payload), 
-             "{\"fase\": \"%s\", \"vrms\": %.2f, \"freq\": %.1f, \"thd\": %.2f, \"estado\": \"%s\"}", 
-             fase, v_rms, freq, thd, estado);
+             "{\"fase\": \"%s\", \"vrms\": %.2f, \"freq\": %.1f, \"thd\": %.2f, \"estado\": \"%s\", \"modo\": \"%s\"}", 
+             fase, v_rms, freq, thd, estado, modo);
 
     esp_mqtt_client_publish(client, TOPIC_DATOS, json_payload, 0, 0, 0);
 }

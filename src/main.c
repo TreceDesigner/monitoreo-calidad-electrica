@@ -56,13 +56,15 @@ void tarea_adquisicion(void *pvParameter) {
         power_quality_t cal_L3 = fft_analyze(buffer_L3, TOTAL_MUESTRAS_FFT, sample_rate_real, FACTOR_CALIBRACION);
 
         // 4. EVALUAR PROTECCIONES GLOBALES
-        // Pasamos los datos de las 3 fases al "cerebro" del relé
         estado_red_t estado = proteccion_evaluar(v_rms_L1, cal_L1.thd_percent, 
                                                  v_rms_L2, cal_L2.thd_percent, 
                                                  v_rms_L3, cal_L3.thd_percent);
 
         const char *estado_str = (estado == ESTADO_NORMAL) ? "NORMAL" : 
                                  (estado == ESTADO_FALLA) ? "FALLA!" : "ESPERA";
+                                 
+        // Obtenemos si el sistema está en modo manual o automático
+        const char *modo_str = proteccion_get_modo_manual() ? "MANUAL" : "AUTO";
 
         // 5. REPORTE EN CONSOLA (Imprimimos las 3 líneas compactas)
         ESP_LOGI(TAG, "L1: %5.1fV | %4.1fHz | %4.1f%% THD", v_rms_L1, cal_L1.fundamental_freq, cal_L1.thd_percent);
@@ -70,10 +72,10 @@ void tarea_adquisicion(void *pvParameter) {
         ESP_LOGI(TAG, "L3: %5.1fV | %4.1fHz | %4.1f%% THD", v_rms_L3, cal_L3.fundamental_freq, cal_L3.thd_percent);
         ESP_LOGI(TAG, "ESTADO GLOBAL DE RED: %s\n", estado_str);
 
-        // 6. ENVIAR DATOS A PYTHON
-        mqtt_enviar_datos("L1", v_rms_L1, cal_L1.fundamental_freq, cal_L1.thd_percent, estado_str);
-        mqtt_enviar_datos("L2", v_rms_L2, cal_L2.fundamental_freq, cal_L2.thd_percent, estado_str);
-        mqtt_enviar_datos("L3", v_rms_L3, cal_L3.fundamental_freq, cal_L3.thd_percent, estado_str);
+        // 6. ENVIAR DATOS A PYTHON (Ahora le pasamos el modo_str al final)
+        mqtt_enviar_datos("L1", v_rms_L1, cal_L1.fundamental_freq, cal_L1.thd_percent, estado_str, modo_str);
+        mqtt_enviar_datos("L2", v_rms_L2, cal_L2.fundamental_freq, cal_L2.thd_percent, estado_str, modo_str);
+        mqtt_enviar_datos("L3", v_rms_L3, cal_L3.fundamental_freq, cal_L3.thd_percent, estado_str, modo_str);
 
         // Pausa para no saturar el servidor
         vTaskDelay(pdMS_TO_TICKS(500)); 
