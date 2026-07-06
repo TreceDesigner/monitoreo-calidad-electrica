@@ -3,7 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "esp_timer.h"
+#include "esp_timer.h"       // Para medir el tiempo exacto (Frecuencia real)
 #include "adc_i2s.h" 
 #include "dsp.h"     
 #include "fft_calc.h"
@@ -15,11 +15,19 @@
 static const char *TAG = "TESIS_MAIN";
 #define WIFI_SSID "egvm1331"
 #define WIFI_PASS "eg.118664"
-#define FACTOR_CALIBRACION  0.98284734134
+
+// --- FACTORES DE CALIBRACIÓN INDEPENDIENTES ---
+// Ajusta cada uno de estos valores comparando la lectura de la web 
+// con lo que marca tu multímetro real en esa fase.
+#define FACTOR_CAL_L1  0.98284734134  // Calibración Fase 1
+#define FACTOR_CAL_L2  0.66025440216  // Calibración Fase 2 (Ajustar en laboratorio)
+#define FACTOR_CAL_L3  1.14551947574  // Calibración Fase 3 (Ajustar en laboratorio)
+
+#define TOTAL_MUESTRAS_FFT  4096
 
 void tarea_adquisicion(void *pvParameter) {
     
-    // 1. Asignar memoria para los 3 canales (Aprox 24 KB en total, el ESP32 lo maneja sobrado)
+    // 1. Asignar memoria para los 3 canales
     uint16_t *buffer_L1 = (uint16_t *)calloc(TOTAL_MUESTRAS_FFT, sizeof(uint16_t));
     uint16_t *buffer_L2 = (uint16_t *)calloc(TOTAL_MUESTRAS_FFT, sizeof(uint16_t));
     uint16_t *buffer_L3 = (uint16_t *)calloc(TOTAL_MUESTRAS_FFT, sizeof(uint16_t));
@@ -30,58 +38,56 @@ void tarea_adquisicion(void *pvParameter) {
     }
 
     while (1) {
-        // --- 1. CRONOMETRAMOS LA TOMA DE MUESTRAS ---
+        // --- 2. CRONOMETRAMOS LA TOMA DE MUESTRAS ---
         int64_t tiempo_inicio = esp_timer_get_time();
         
         adc_read_three_phases(buffer_L1, buffer_L2, buffer_L3, TOTAL_MUESTRAS_FFT);
         
         int64_t tiempo_fin = esp_timer_get_time();
 
-        // --- 2. CALCULAMOS LA TASA DE MUESTREO REAL ---
-        // Convertimos microsegundos a segundos
+        // --- 3. CALCULAMOS LA TASA DE MUESTREO REAL ---
         float tiempo_segundos = (tiempo_fin - tiempo_inicio) / 1000000.0; 
         float sample_rate_real = TOTAL_MUESTRAS_FFT / tiempo_segundos;
 
-        // --- 3. PROCESAMIENTO MATEMÁTICO (DSP) ---
-        // FASE 1 (Fíjate que ahora pasamos sample_rate_real en vez del fijo)
-        float v_rms_L1 = dsp_calculate_rms(buffer_L1, TOTAL_MUESTRAS_FFT, FACTOR_CALIBRACION);
-        power_quality_t cal_L1 = fft_analyze(buffer_L1, TOTAL_MUESTRAS_FFT, sample_rate_real, FACTOR_CALIBRACION);
+        // --- 4. PROCESAMIENTO MATEMÁTICO (DSP) CON CALIBRACIÓN INDEPENDIENTE ---
+        // FASE 1
+        float v_rms_L1 = dsp_calculate_rms(buffer_L1, TOTAL_MUESTRAS_FFT, FACTOR_CAL_L1);
+        power_quality_t cal_L1 = fft_analyze(buffer_L1, TOTAL_MUESTRAS_FFT, sample_rate_real, FACTOR_CAL_L1);
         
         // FASE 2
-        float v_rms_L2 = dsp_calculate_rms(buffer_L2, TOTAL_MUESTRAS_FFT, FACTOR_CALIBRACION);
-        power_quality_t cal_L2 = fft_analyze(buffer_L2, TOTAL_MUESTRAS_FFT, sample_rate_real, FACTOR_CALIBRACION);
+        float v_rms_L2 = dsp_calculate_rms(buffer_L2, TOTAL_MUESTRAS_FFT, FACTOR_CAL_L2);
+        power_quality_t cal_L2 = fft_analyze(buffer_L2, TOTAL_MUESTRAS_FFT, sample_rate_real, FACTOR_CAL_L2);
         
         // FASE 3
-        float v_rms_L3 = dsp_calculate_rms(buffer_L3, TOTAL_MUESTRAS_FFT, FACTOR_CALIBRACION);
-        power_quality_t cal_L3 = fft_analyze(buffer_L3, TOTAL_MUESTRAS_FFT, sample_rate_real, FACTOR_CALIBRACION);
+        float v_rms_L3 = dsp_calculate_rms(buffer_L3, TOTAL_MUESTRAS_FFT, FACTOR_CAL_L3);
+        power_quality_t cal_L3 = fft_analyze(buffer_L3, TOTAL_MUESTRAS_FFT, sample_rate_real, FACTOR_CAL_L3);
 
-        // 4. EVALUAR PROTECCIONES GLOBALES
-        estado_red_t estado = proteccion_evaluar(v_rms_L1, cal_L1.thd_percent, 
-                                                 v_rms_L2, cal_L2.thd_percent, 
-                                                 v_rms_L3, cal_L3.thd_percent);
+        // --- 5. EVALUAR PROTECCIONES GLOBALES ---
+        estado_red_t estado = proteccion_evaluar(
+            v_rms_L1, cal_L1.fundamental_freq, cal_L1.thd_percent, 
+            v_rms_L2, cal_L2.fundamental_freq, cal_L2.thd_percent, 
+            v_rms_L3, cal_L3.fundamental_freq, cal_L3.thd_percent
+        );
 
         const char *estado_str = (estado == ESTADO_NORMAL) ? "NORMAL" : 
                                  (estado == ESTADO_FALLA) ? "FALLA!" : "ESPERA";
                                  
-        // Obtenemos si el sistema está en modo manual o automático
         const char *modo_str = proteccion_get_modo_manual() ? "MANUAL" : "AUTO";
 
-        // 5. REPORTE EN CONSOLA (Imprimimos las 3 líneas compactas)
+        // --- 6. REPORTE EN CONSOLA ---
         ESP_LOGI(TAG, "L1: %5.1fV | %4.1fHz | %4.1f%% THD", v_rms_L1, cal_L1.fundamental_freq, cal_L1.thd_percent);
         ESP_LOGI(TAG, "L2: %5.1fV | %4.1fHz | %4.1f%% THD", v_rms_L2, cal_L2.fundamental_freq, cal_L2.thd_percent);
         ESP_LOGI(TAG, "L3: %5.1fV | %4.1fHz | %4.1f%% THD", v_rms_L3, cal_L3.fundamental_freq, cal_L3.thd_percent);
-        ESP_LOGI(TAG, "ESTADO GLOBAL DE RED: %s\n", estado_str);
+        ESP_LOGI(TAG, "ESTADO: %s | MODO: %s\n", estado_str, modo_str);
 
-        // 6. ENVIAR DATOS A PYTHON (Ahora le pasamos el modo_str al final)
+        // --- 7. ENVIAR DATOS A PYTHON ---
         mqtt_enviar_datos("L1", v_rms_L1, cal_L1.fundamental_freq, cal_L1.thd_percent, estado_str, modo_str);
         mqtt_enviar_datos("L2", v_rms_L2, cal_L2.fundamental_freq, cal_L2.thd_percent, estado_str, modo_str);
         mqtt_enviar_datos("L3", v_rms_L3, cal_L3.fundamental_freq, cal_L3.thd_percent, estado_str, modo_str);
 
-        // Pausa para no saturar el servidor
         vTaskDelay(pdMS_TO_TICKS(500)); 
     }
     
-    // (Por buenas prácticas de C, aunque el while(1) sea infinito)
     free(buffer_L1); free(buffer_L2); free(buffer_L3);
 }
 
@@ -99,14 +105,13 @@ void app_main() {
     vTaskDelay(pdMS_TO_TICKS(3000));
     
     mqtt_app_start();
-    
     adc_i2s_init();
     proteccion_init();
 
     xTaskCreatePinnedToCore(
         tarea_adquisicion, 
         "Adquisicion_Task", 
-        8192,  // Aumentamos un poco la memoria de la tarea por los 3 buffers
+        8192,  
         NULL, 
         5, 
         NULL, 

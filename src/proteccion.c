@@ -47,25 +47,25 @@ void proteccion_set_modo_auto(void) {
     ESP_LOGI(TAG, "Cambiando a MODO AUTOMÁTICO. El sistema retoma la protección.");
 }
 
-estado_red_t proteccion_evaluar(float v1, float thd1, float v2, float thd2, float v3, float thd3) {
+estado_red_t proteccion_evaluar(float v1, float f1, float thd1, float v2, float f2, float thd2, float v3, float f3, float thd3) {
     if (modo_manual) return estado_actual; 
     
-    // Evaluamos fallas individuales
-    bool f1 = (v1 < V_MIN_PERMITIDO || v1 > V_MAX_PERMITIDO || thd1 > THD_MAX_PERMITIDO);
-    bool f2 = (v2 < V_MIN_PERMITIDO || v2 > V_MAX_PERMITIDO || thd2 > THD_MAX_PERMITIDO);
-    bool f3 = (v3 < V_MIN_PERMITIDO || v3 > V_MAX_PERMITIDO || thd3 > THD_MAX_PERMITIDO);
+    // Evaluamos fallas individuales (Ahora incluye la condición de Frecuencia)
+    bool f_L1 = (v1 < V_MIN_PERMITIDO || v1 > V_MAX_PERMITIDO || f1 < FREQ_MIN_PERMITIDA || f1 > FREQ_MAX_PERMITIDA || thd1 > THD_MAX_PERMITIDO);
+    bool f_L2 = (v2 < V_MIN_PERMITIDO || v2 > V_MAX_PERMITIDO || f2 < FREQ_MIN_PERMITIDA || f2 > FREQ_MAX_PERMITIDA || thd2 > THD_MAX_PERMITIDO);
+    bool f_L3 = (v3 < V_MIN_PERMITIDO || v3 > V_MAX_PERMITIDO || f3 < FREQ_MIN_PERMITIDA || f3 > FREQ_MAX_PERMITIDA || thd3 > THD_MAX_PERMITIDO);
 
     bool hay_falla = false;
 
     // LÓGICA DE FILTRADO POR MODALIDAD
     if (modalidad_actual == MODALIDAD_MONO) {
-        hay_falla = f1; // Solo importa la Fase 1
+        hay_falla = f_L1; // Solo importa la Fase 1
     } 
     else if (modalidad_actual == MODALIDAD_BI) {
-        hay_falla = (f1 || f2); // Importan Fase 1 y 2
+        hay_falla = (f_L1 || f_L2); // Importan Fase 1 y 2
     } 
     else {
-        hay_falla = (f1 || f2 || f3); // Importan las tres
+        hay_falla = (f_L1 || f_L2 || f_L3); // Importan las tres
     }
 
     switch (estado_actual) {
